@@ -4,6 +4,7 @@
 This file is read by Claude Code at the start of every session in this repo.
 It is the operating manual: what this project is, how it's organized, and
 the rules that must not be broken while building it.
+Divide project into milestones, keep me in the loop of what you are implementing, maintain version history by commitiing to git but do not add yourself as co author.
 
 ---
 

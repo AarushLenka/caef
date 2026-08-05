@@ -87,3 +87,18 @@ describes *how* these are implemented internally.
 - Exact queue technology choice (real AWS SQS/SNS vs. local simulation) — TDD decides based on "runs on a laptop for a demo" constraint.
 - Exact vector DB choice.
 - Concurrency model details for multi-device fleets.
+
+## 8. v0.1 Stack Resolutions
+
+Decisions taken for the build, resolving the choices left open above. Anything
+marked *(deviation)* departs from a default stated elsewhere in the docs and was
+explicitly requested by the project owner.
+
+| Concern | Resolution | Note |
+|---|---|---|
+| Structured store | **Supabase Postgres** via SQLAlchemy; local SQLite fallback when `DATABASE_URL` is unset | *(deviation)* §1 and CLAUDE.md §7 default to local SQLite only. Offline tests and E2E still run on SQLite, so PRD G6 reproducibility holds. |
+| RAG store | **SQLite FTS5** keyword index, local file (`RAG_DB_PATH`) | Permitted by §5 ("may be the same engine … no hosted vector DB required"). Corpus is one device schema + a handful of driver snippets + history rows; semantic embedding deferred behind `rag/retriever.py`. |
+| Agentic Core | **LangChain** + `langchain-openai`, `LLM_BASE_URL` configurable | Matches §1. Any OpenAI-compatible endpoint (OpenAI, OpenRouter, Groq, local Ollama) works without a code change, per §1's "model is pluggable". |
+| Distributor | in-process `asyncio.Queue` behind a `Distributor` interface | §7's laptop-demo constraint; SQS/SNS swap without touching Listener/Agent (CLAUDE.md §5). |
+| Device ↔ Listener | stdlib `socket`, UDP heartbeats + TCP events | §2.1; no MQTT broker in v0.1. |
+| Frontend + poll endpoint | FastAPI + one HTML page, SSE live feed | §1 lists FastAPI or Streamlit; FastAPI also serves the `Poll id / firmware` endpoint the device already needs (LOOPS.md §3). |

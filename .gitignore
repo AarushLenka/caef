@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+caef.db
+caef_rag.db
+firmware_store/
+.pytest_cache/
