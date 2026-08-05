@@ -34,6 +34,9 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'caef.db'}")
 # RAG store: local SQLite FTS5 index, separate file from the structured store
 # (TRD.md §5 permits one engine for both; we keep RAG local so E2E runs offline).
 RAG_DB_PATH = Path(os.getenv("RAG_DB_PATH", ROOT / "caef_rag.db"))
+# How many retrieved documents of each type reach the prompt (TDD.md §2.4).
+RAG_DRIVER_DOC_LIMIT = _int("RAG_DRIVER_DOC_LIMIT", 5)
+RAG_HISTORY_DOC_LIMIT = _int("RAG_HISTORY_DOC_LIMIT", 3)
 
 HARDWARE_SCHEMA_DIR = Path(os.getenv("HARDWARE_SCHEMA_DIR", ROOT / "schemas"))
 FIRMWARE_STORE_DIR = Path(os.getenv("FIRMWARE_STORE_DIR", ROOT / "firmware_store"))
@@ -108,3 +111,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL") or None
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.0))
+# Cap on tool-call round trips within a single generation attempt, so a model
+# that keeps calling check_hardware_schema without ever emitting code still
+# terminates and burns exactly one retry (SAFETY_PROTOCOL.md §4).
+AGENT_MAX_TOOL_TURNS = _int("AGENT_MAX_TOOL_TURNS", 8)
