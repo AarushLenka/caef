@@ -48,6 +48,12 @@ SANDBOX_TIMEOUT_SECONDS = _int("SANDBOX_TIMEOUT_SECONDS", 10)
 SANDBOX_MEMORY_LIMIT = os.getenv("SANDBOX_MEMORY_LIMIT", "128m")
 SANDBOX_CPU_LIMIT = os.getenv("SANDBOX_CPU_LIMIT", "0.5")
 SANDBOX_IMAGE = os.getenv("SANDBOX_IMAGE", "caef-sandbox:latest")
+# SAFETY_PROTOCOL.md §3.4: a candidate must emit this marker to count as healthy.
+# The baseline firmware logs it on every tick; empty disables the check.
+SANDBOX_HEALTHY_MARKER = os.getenv("SANDBOX_HEALTHY_MARKER", "[firmware]")
+# Sandbox logs are stored on the Patch row for audit; cap so a chatty or looping
+# candidate cannot bloat the DB.
+SANDBOX_LOG_LIMIT_CHARS = _int("SANDBOX_LOG_LIMIT_CHARS", 20_000)
 
 # SAFETY_PROTOCOL.md §5 — strikes are counted per device_id.
 STRIKE_LIMIT = _int("STRIKE_LIMIT", 3)
