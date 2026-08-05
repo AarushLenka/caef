@@ -112,6 +112,23 @@ class AgentTask(BaseModel):
     retry_count: int = 0
 
 
+# --- §3a Event Notification --------------------------------------------------
+
+
+class EventNotification(BaseModel):
+    """The `Event` half of the Distributor fan-out (ARCHITECTURE.md §3): the
+    same occurrence as the Task, addressed to observers rather than the Agent.
+    Carries `event_id` so the Frontend can join it to the History Table."""
+
+    event_id: str
+    device_id: str
+    trigger_type: TriggerType
+    event: str
+    timestamp: int  # device-authoritative
+    current_state_hash: str
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
 # --- §4 Agent Output ---------------------------------------------------------
 
 

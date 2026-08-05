@@ -6,3 +6,4 @@ caef.db
 caef_rag.db
 firmware_store/
 .pytest_cache/
+smoke.db

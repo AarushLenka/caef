@@ -84,6 +84,28 @@ Sent from device to Listener.
 }
 ```
 
+## 3a. Event Notification (Distributor → Frontend / DB)
+
+The `Event` half of the Distributor fan-out (ARCHITECTURE §3), published for
+every accepted telemetry payload — including `HEARTBEAT`, which is observed but
+does not produce a `Task`. Same occurrence as §3, addressed to observers rather
+than the Agent.
+
+```json
+{
+  "event_id": "uuid",
+  "device_id": "pi_node_alpha",
+  "trigger_type": "CONTEXT_TRIGGER",
+  "event": "HIGH_HEAT_DETECTED",
+  "timestamp": 171542000,
+  "current_state_hash": "a1b2c3d4",
+  "data": { "temp_c": 85.4, "threshold": 80.0 }
+}
+```
+
+- `event_id` matches the persisted `events.id`, so the Frontend can join a live
+  feed entry to its History Table rows without a second lookup key.
+
 ## 4. Agent Output (Agent → Guard Rail → Sandbox)
 
 ```json

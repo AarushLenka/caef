@@ -3,6 +3,7 @@ sqlalchemy>=2.0
 pydantic>=2.0
 python-dotenv>=1.0
 pytest>=8.0
+pytest-asyncio>=0.24
 
 # Structured store: Supabase Postgres in deployment, SQLite offline
 psycopg[binary]>=3.2
