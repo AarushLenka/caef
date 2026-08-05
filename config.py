@@ -75,11 +75,25 @@ LISTENER_TCP_PORT = _int("LISTENER_TCP_PORT", 9501)  # events needing an ack
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = _int("API_PORT", 8000)  # frontend + /poll reconciliation endpoint
 
+# --- Edge node ---------------------------------------------------------------
 DEVICE_ID = os.getenv("DEVICE_ID", "pi_node_alpha")
 SENSOR_TICK_SECONDS = _int("SENSOR_TICK_SECONDS", 1)  # LOOPS.md §1
 POLL_INTERVAL_SECONDS = _int("POLL_INTERVAL_SECONDS", 30)  # LOOPS.md §3
 OTA_PORT = _int("OTA_PORT", 9600)  # device watchdog listens here
 HEAT_THRESHOLD_C = float(os.getenv("HEAT_THRESHOLD_C", 80.0))
+# Source spec's post-trigger pause: device stops per-loop work while awaiting an
+# OTA reply rather than re-firing the same trigger every tick (LOOPS.md §1).
+POST_TRIGGER_HOLD_SECONDS = _int("POST_TRIGGER_HOLD_SECONDS", 20)
+TELEMETRY_TIMEOUT_SECONDS = _int("TELEMETRY_TIMEOUT_SECONDS", 5)
+# The firmware artifact the Agent regenerates (AgentOutput.target_file).
+FIRMWARE_PATH = Path(os.getenv("FIRMWARE_PATH", ROOT / "edge_node" / "main.py"))
+# Real DHT11s read a few degrees off; this is the per-device calibration knob,
+# not a simulation cheat — it stays meaningful on physical hardware.
+SENSOR_TEMP_OFFSET_C = float(os.getenv("SENSOR_TEMP_OFFSET_C", 0.0))
+# Which physical situation the simulated sensors model: normal | heat.
+# Crash behaviour is not a scenario flag — a faulty firmware is OTA-pushed, the
+# same way a real regression would arrive.
+SCENARIO = os.getenv("SCENARIO", "normal")
 
 # --- Agent -------------------------------------------------------------------
 # LangChain over an OpenAI-compatible endpoint; LLM_BASE_URL lets this point at

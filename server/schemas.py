@@ -5,6 +5,7 @@ naming consistency rule). Renaming a field here without updating the doc in the
 same commit is a build failure per CLAUDE.md §4.
 """
 
+import hashlib
 import json
 from enum import StrEnum
 from typing import Any, Literal
@@ -160,3 +161,38 @@ class SandboxResult(BaseModel):
     logs: str = ""
     results: str | None = None
     delta_firmware: str | None = None
+
+
+# --- §6a OTA Push ------------------------------------------------------------
+
+
+class OTAPush(BaseModel):
+    device_id: str
+    fw_hash: str
+    target_file: str
+    code: str
+    patch_id: str | None = None
+    record_type: RecordType
+
+
+class OTAAck(BaseModel):
+    device_id: str
+    status: Literal["accepted", "rejected"]
+    fw_hash: str
+    reason: str | None = None
+
+
+# --- §6b Poll / Reconciliation ----------------------------------------------
+
+
+class PollResponse(BaseModel):
+    poll_id: str
+    device_id: str
+    assigned_fw_hash: str | None
+    in_sync: bool
+
+
+def fw_hash(code: str) -> str:
+    """Canonical firmware hash. One implementation, used by device, deploy and
+    History Table alike, so `current_state_hash` and `fw_hash` are comparable."""
+    return hashlib.sha256(code.encode()).hexdigest()[:16]

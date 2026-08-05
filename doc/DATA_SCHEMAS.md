@@ -111,8 +111,10 @@ Sent from device to Listener.
   "status": "pass",
   "checks": {
     "forbidden_pin_check": "pass",
+    "tool_call_provenance": "pass",
     "schema_conformance": "pass",
-    "static_safety_denylist": "pass"
+    "static_safety_denylist": "pass",
+    "current_draw_sanity": "pass"
   },
   "reason": null
 }
@@ -149,6 +151,54 @@ On failure:
 ```
 
 This is the literal `FAIL (Results, ΔFirmware)` artifact from the architecture diagram.
+
+## 6a. OTA Push Payload (Deploy → Device Watchdog)
+
+Sent server → device over the watchdog's TCP port. `fw_hash` is verified by the
+device before it writes the file (TRD §6: integrity, not code-signing, for v0.1).
+
+```json
+{
+  "device_id": "pi_node_alpha",
+  "fw_hash": "a1b2c3d4",
+  "target_file": "main.py",
+  "code": "<full file contents as string>",
+  "patch_id": "uuid",
+  "record_type": "morph_deploy"
+}
+```
+
+Device replies on the same connection:
+
+```json
+{ "device_id": "pi_node_alpha", "status": "accepted", "fw_hash": "a1b2c3d4", "reason": null }
+```
+
+- `status`: `accepted` | `rejected`. `rejected` carries a `reason` (e.g.
+  `hash_mismatch`) and the device keeps running its current firmware — a failed
+  push must never leave the device in an unsafe or half-written state (NFR-6).
+- `record_type` mirrors the History Table enum (§7) so the device's own log line
+  distinguishes a morph from a patch from a rollback.
+
+## 6b. Poll / Reconciliation (Device → Server)
+
+The `Poll id / firmware` and `Polled Poll(id)` exchange from ARCHITECTURE §3.
+Device sends `GET /poll?id=<device_id>&current_state_hash=<hash>`; server replies:
+
+```json
+{
+  "poll_id": "uuid",
+  "device_id": "pi_node_alpha",
+  "assigned_fw_hash": "a1b2c3d4",
+  "in_sync": true
+}
+```
+
+- `poll_id` is generated per poll and is the value stored in `history.poll_id`.
+- `in_sync` is `false` when `assigned_fw_hash` differs from the device's reported
+  `current_state_hash`; the device then re-requests the artifact directly
+  (`GET /firmware?id=<device_id>`, returning an OTA Push Payload as above). This
+  is the missed-push safety net (LOOPS.md §3).
 
 ## 7. History Table (canonical ledger row)
 
