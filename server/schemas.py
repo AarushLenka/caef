@@ -15,6 +15,15 @@ from pydantic import BaseModel, Field
 import config
 
 
+# The only sanctioned way the Agent learns whether a pin is safe (TDD.md §2.4).
+# Guard Rail matches tool-call traces against this exact name, so it lives here
+# rather than in the Agent package that Guard Rail must not depend on.
+TOOL_CHECK_HARDWARE_SCHEMA = "check_hardware_schema"
+# Prefix marking a tool call that resolved successfully (DATA_SCHEMAS.md §4
+# example: "SAFE: Connected to Relay_Fan"). Anything else is not provenance.
+TOOL_RESULT_SAFE_PREFIX = "SAFE"
+
+
 class TriggerType(StrEnum):
     CONTEXT_TRIGGER = "CONTEXT_TRIGGER"
     CRITICAL_FAILURE = "CRITICAL_FAILURE"
