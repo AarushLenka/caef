@@ -29,14 +29,21 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-@pytest.fixture(autouse=True)
-def db():
-    m.init_db()
-    yield
+def _truncate() -> None:
     with m.SessionLocal() as session:
         for table in (m.HistoryRecord, m.Patch, m.Event, m.Device):
             session.query(table).delete()
         session.commit()
+
+
+@pytest.fixture(autouse=True)
+def db():
+    # Clean at both ends: a shared in-memory SQLite connection means rows left
+    # by another test module would otherwise leak into these assertions.
+    m.init_db()
+    _truncate()
+    yield
+    _truncate()
 
 
 def telemetry(event="HIGH_HEAT_DETECTED", trigger=TriggerType.CONTEXT_TRIGGER, **data) -> bytes:
