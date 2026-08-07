@@ -1,13 +1,16 @@
-"""Shared test isolation.
+"""Shared test isolation and the guard that keeps tests off production data.
 
-Every test module points `DATABASE_URL` at the same in-memory SQLite DB, and
-`models.py` pins it to a `StaticPool` so worker threads all see one schema.
-That makes the DB genuinely shared for the whole pytest session, so rows left
-by one module collide with another module's primary keys. Reset per test here,
-once, rather than trusting every module to remember.
+Default backend is in-memory SQLite: offline, fast, no credentials needed.
+Set `CAEF_TEST_POSTGRES=1` to run the same suite against the real Postgres
+backend instead, which is what proves the SQLite/Postgres divergence the
+`aware()` helper in models.py exists to paper over.
 
-Module-level fixtures still run after this one, so per-file setup that seeds a
-device keeps working.
+That Postgres run is pointed at a dedicated `caef_test` schema derived from
+DATABASE_URL, never `public`. The per-test fixture below truncates every table,
+so pointing it at the deployment schema would wipe real history. `_guard()`
+makes that a hard failure rather than a convention: it re-asserts, against the
+live connection, that the search_path really did land on the test schema before
+a single row is deleted.
 """
 
 import os
@@ -15,16 +18,82 @@ import sys
 from pathlib import Path
 
 import pytest
+from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+
+TEST_SCHEMA = "caef_test"
+
+
+def _database_url() -> str:
+    """Resolve the backend before any test module imports config.
+
+    Every test module calls `os.environ.setdefault("DATABASE_URL", ...)`, so
+    setting it here first wins — conftest is imported before them.
+    """
+    if os.getenv("CAEF_TEST_POSTGRES") != "1":
+        return "sqlite:///:memory:"
+
+    url = os.getenv("DATABASE_URL") or dotenv_values(ROOT / ".env").get("DATABASE_URL")
+    if not url or not url.startswith("postgresql"):
+        raise RuntimeError("CAEF_TEST_POSTGRES=1 but DATABASE_URL is not a Postgres URL")
+    return url
+
+
+os.environ["DATABASE_URL"] = _database_url()
+
+from sqlalchemy import event, text  # noqa: E402
 
 from server.db import models as m  # noqa: E402
 
+if m.engine.dialect.name == "postgresql":
+    # Registered before anything opens a connection, so no pooled connection can
+    # predate it. Set per checkout rather than via the URL's `options` parameter:
+    # Supabase's connection pooler drops libpq startup options, so the URL form
+    # silently leaves search_path on `public` — the one outcome that must not
+    # happen before a truncating fixture runs.
+    @event.listens_for(m.engine, "connect")
+    def _use_test_schema(dbapi_connection, _record):
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute(f"create schema if not exists {TEST_SCHEMA}")
+            cursor.execute(f"set search_path to {TEST_SCHEMA}")
+        dbapi_connection.commit()
+
+
+def _guard() -> None:
+    """Refuse to truncate anything outside the test schema.
+
+    Asked of the live connection rather than inferred from the URL string: a
+    typo'd or ignored `options` parameter silently leaves search_path on
+    `public`, which is exactly the case that must not proceed to a DELETE.
+    """
+    if m.engine.dialect.name != "postgresql":
+        return
+    with m.engine.connect() as db:
+        schema = db.execute(text("select current_schema()")).scalar()
+    if schema != TEST_SCHEMA:
+        raise RuntimeError(
+            f"refusing to run destructive tests against schema {schema!r}; "
+            f"expected {TEST_SCHEMA!r}"
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def schema_guard():
+    _guard()
+    yield
+
 
 @pytest.fixture(autouse=True)
-def clean_db():
+def clean_db(schema_guard):
+    """Reset between tests.
+
+    The in-memory SQLite engine is pinned to a StaticPool, which makes it
+    session-wide rather than per-connection, so rows left by one module collide
+    with another module's primary keys. Reset once here instead of trusting
+    every module to remember.
+    """
     m.init_db()
     with m.SessionLocal() as db:
         for table in (m.HistoryRecord, m.Patch, m.Event, m.Device):

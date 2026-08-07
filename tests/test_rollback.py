@@ -249,6 +249,26 @@ def test_revert_is_a_noop_when_the_live_firmware_is_a_patch():
 # --- scheduler ---------------------------------------------------------------
 
 
+def reversions() -> int:
+    with m.SessionLocal() as db:
+        return db.query(m.HistoryRecord).filter_by(record_type=RecordType.REVERSION).count()
+
+
+async def wait_for_reversion(expected: int = 1, timeout: float = 10.0) -> int:
+    """Poll until the reversion lands, instead of sleeping a guessed duration.
+
+    A reversion writes to the DB, and a remote Postgres round-trip is orders of
+    magnitude slower than in-memory SQLite — a fixed sleep tuned for one is
+    flaky on the other.
+    """
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if reversions() >= expected:
+            break
+        await asyncio.sleep(0.02)
+    return reversions()
+
+
 async def test_time_mode_reverts_after_the_window(monkeypatch):
     monkeypatch.setattr(config, "REVERSION_MODE", "time")
     monkeypatch.setattr(config, "REVERSION_WINDOW_SECONDS", 0.1)
@@ -257,10 +277,8 @@ async def test_time_mode_reverts_after_the_window(monkeypatch):
 
     scheduler = ReversionScheduler()
     scheduler.schedule(DEVICE)
-    await asyncio.sleep(0.4)
 
-    with m.SessionLocal() as db:
-        assert db.query(m.HistoryRecord).filter_by(record_type=RecordType.REVERSION).count() == 1
+    assert await wait_for_reversion() == 1
 
 
 async def test_condition_mode_waits_for_recovery(monkeypatch):
@@ -273,14 +291,13 @@ async def test_condition_mode_waits_for_recovery(monkeypatch):
     scheduler = ReversionScheduler()
     scheduler.observe(DEVICE, 85.0)  # still hot
     scheduler.schedule(DEVICE)
-    await asyncio.sleep(0.2)
-    with m.SessionLocal() as db:
-        assert db.query(m.HistoryRecord).filter_by(record_type=RecordType.REVERSION).count() == 0
+    # Negative assertion, so this one must be a real wait: it has to outlast
+    # several poll intervals to mean anything.
+    await asyncio.sleep(config.REVERSION_POLL_SECONDS * 4)
+    assert reversions() == 0
 
     scheduler.observe(DEVICE, 55.0)  # cooled below REVERSION_RECOVERY_THRESHOLD_C
-    await asyncio.sleep(0.4)
-    with m.SessionLocal() as db:
-        assert db.query(m.HistoryRecord).filter_by(record_type=RecordType.REVERSION).count() == 1
+    assert await wait_for_reversion() == 1
 
 
 async def test_combined_mode_reverts_on_whichever_comes_first(monkeypatch):
@@ -293,10 +310,8 @@ async def test_combined_mode_reverts_on_whichever_comes_first(monkeypatch):
     scheduler = ReversionScheduler()
     scheduler.observe(DEVICE, 95.0)  # never recovers; the timer must fire
     scheduler.schedule(DEVICE)
-    await asyncio.sleep(0.5)
 
-    with m.SessionLocal() as db:
-        assert db.query(m.HistoryRecord).filter_by(record_type=RecordType.REVERSION).count() == 1
+    assert await wait_for_reversion() == 1
 
 
 async def test_a_newer_morph_replaces_the_pending_reversion(monkeypatch):
@@ -310,10 +325,12 @@ async def test_a_newer_morph_replaces_the_pending_reversion(monkeypatch):
     scheduler.schedule(DEVICE)
     scheduler.schedule(DEVICE)  # a second morph arrives
     assert scheduler.pending(DEVICE)
-    await asyncio.sleep(0.5)
 
-    with m.SessionLocal() as db:
-        assert db.query(m.HistoryRecord).filter_by(record_type=RecordType.REVERSION).count() == 1
+    assert await wait_for_reversion() == 1
+    # The cancelled timer would fire a window later; give it the chance to, so
+    # "exactly one" is a real claim rather than one observed too early.
+    await asyncio.sleep(config.REVERSION_WINDOW_SECONDS * 2)
+    assert reversions() == 1
 
 
 async def test_cancelled_reversion_does_not_fire(monkeypatch):
@@ -326,7 +343,8 @@ async def test_cancelled_reversion_does_not_fire(monkeypatch):
     scheduler = ReversionScheduler()
     scheduler.schedule(DEVICE)
     scheduler.cancel(DEVICE)
-    await asyncio.sleep(0.3)
+    # Negative assertion: outlast the window the cancelled job would have fired
+    # in, or this passes simply by looking too soon.
+    await asyncio.sleep(config.REVERSION_WINDOW_SECONDS * 3)
 
-    with m.SessionLocal() as db:
-        assert db.query(m.HistoryRecord).filter_by(record_type=RecordType.REVERSION).count() == 0
+    assert reversions() == 0

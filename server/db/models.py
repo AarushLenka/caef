@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    event,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -150,6 +151,17 @@ if config.DATABASE_URL.endswith(":memory:"):
 
 engine = create_engine(config.DATABASE_URL, future=True, **_engine_kwargs)
 SessionLocal = sessionmaker(engine, expire_on_commit=False, future=True)
+
+if engine.dialect.name == "sqlite":
+    # SQLite ignores foreign keys unless asked, per connection. Postgres always
+    # enforces them, so without this an orphaned History row — the exact thing
+    # FKEY traceability forbids (NFR-5) — passes on SQLite and only fails in
+    # deployment.
+    @event.listens_for(engine, "connect")
+    def _enforce_foreign_keys(dbapi_connection, _record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 def init_db() -> None:

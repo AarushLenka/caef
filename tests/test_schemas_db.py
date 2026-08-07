@@ -125,8 +125,15 @@ def test_fkey_chain_traversable():
 
 
 def test_history_row_allows_null_patch_for_rollback():
-    """Rollback/reversion rows reference a prior artifact, not new code."""
+    """Rollback/reversion rows reference a prior artifact, not new code.
+
+    The device is provisioned because `HistoryRecord.device_id` is a real FKEY:
+    SQLite leaves foreign keys unenforced by default, so an orphan row only
+    fails on Postgres.
+    """
     with m.SessionLocal() as db:
+        db.add(m.Device(id="pi_node_alpha", mcu_type="RaspberryPi_4B"))
+        db.flush()
         db.add(
             m.HistoryRecord(
                 time=171542500,
