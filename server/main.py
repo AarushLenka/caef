@@ -9,10 +9,12 @@ Listener or Agent code.
 import asyncio
 import logging
 
-from server.agent.stub_agent import StubAgent
+import config
+from server.agent.agent import Agent, build_llm
 from server.db.models import init_db
 from server.distributor.distributor import LocalDistributor
 from server.listener.listener import Listener
+from server.orchestrator import Orchestrator
 from server.schemas import EventNotification
 
 log = logging.getLogger("caef")
@@ -28,13 +30,27 @@ async def serve() -> None:
     init_db()
     distributor = LocalDistributor()
     distributor.subscribe(log_event)
-    agent = StubAgent()
+    orchestrator = Orchestrator(Agent(build_llm()))
+    # Condition/combined reversion polls the device's latest reading, which only
+    # reaches the scheduler through the Event topic (LOOPS.md §2a).
+    distributor.subscribe(lambda event: _observe(orchestrator, event))
     listener = Listener(distributor)
 
     await listener.serve_tcp()
     await listener.serve_udp()
-    log.info("CAEF server up (stub agent — no generation until M4/M5 land)")
-    await distributor.drain(agent.handle)
+    log.info("CAEF server up (mode=%s, reversion=%s)", config.SCENARIO, config.REVERSION_MODE)
+    await distributor.drain(orchestrator.handle)
+
+
+def _observe(orchestrator: Orchestrator, event: EventNotification) -> None:
+    """Feed the triggering metric to the reversion scheduler.
+
+    `temp_c` is the v0.1 situation metric (PRD §6 Scenario A / OQ-1's recovery
+    threshold); events that carry no reading are simply not observations.
+    """
+    reading = event.data.get("temp_c")
+    if isinstance(reading, (int, float)):
+        orchestrator.scheduler.observe(event.device_id, float(reading))
 
 
 def main() -> None:
