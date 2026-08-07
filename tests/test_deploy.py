@@ -312,6 +312,18 @@ def test_last_known_good_prefers_the_inactive_slot():
     assert deployer.last_known_good(DEVICE) == fw_hash(V1)
 
 
+def test_last_known_good_ignores_an_unconfirmed_candidate():
+    """§6: the inactive slot is known-good only *after* the flip.
+
+    Between promote and the device's ack it holds the candidate. If that push is
+    lost — the exact situation a rollback responds to — trusting the slot would
+    restore the firmware being rolled back from.
+    """
+    deployer.write_history(DEVICE, fw_hash(V1), RecordType.PATCH_DEPLOY)
+    deployer.promote_to_inactive_slot(DEVICE, fw_hash(V2))  # pushed, never acked
+    assert deployer.last_known_good(DEVICE) == fw_hash(V1)
+
+
 def test_last_known_good_never_calls_an_llm(monkeypatch):
     """NFR-4: pure History Table + A/B lookup, reachable with the Agent down."""
     import server.agent.agent as agent_module

@@ -22,6 +22,7 @@ from sqlalchemy import (
     create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 import config
 from server.schemas import RecordStatus, RecordType, TriggerType
@@ -127,7 +128,27 @@ class HistoryRecord(Base):
     device: Mapped[Device] = relationship(back_populates="history")
 
 
-engine = create_engine(config.DATABASE_URL, future=True)
+def aware(value: datetime | None) -> datetime | None:
+    """Coerce a stored timestamp back to UTC-aware.
+
+    SQLite has no timestamp type, so SQLAlchemy hands back naive datetimes even
+    for `DateTime(timezone=True)` columns. Postgres does not. Every age
+    comparison against a stored time goes through here so the two backends
+    behave identically (CRASH_ATTRIBUTION_WINDOW_SECONDS is safety-relevant).
+    """
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+_engine_kwargs = {}
+if config.DATABASE_URL.endswith(":memory:"):
+    # An in-memory SQLite DB is per-connection, so worker threads would each
+    # get their own empty schema. Test-only config, but the failure it causes
+    # is silent and confusing, so it is handled here rather than per test.
+    _engine_kwargs = {"poolclass": StaticPool, "connect_args": {"check_same_thread": False}}
+
+engine = create_engine(config.DATABASE_URL, future=True, **_engine_kwargs)
 SessionLocal = sessionmaker(engine, expire_on_commit=False, future=True)
 
 

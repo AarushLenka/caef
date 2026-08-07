@@ -255,7 +255,13 @@ def last_known_good(device_id: str) -> str | None:
     """
     with SessionLocal() as db:
         device = db.get(Device, device_id)
-        if device and device.inactive_fw_hash:
+        # Only trust the inactive slot once the device has confirmed something
+        # newer is live. Until then the slot holds the *candidate* promoted by
+        # `promote_to_inactive_slot`, not a known-good artifact — a push lost in
+        # flight would otherwise roll the device back onto the firmware it is
+        # being rolled back from (SAFETY_PROTOCOL.md §6: the slot is known-good
+        # only after the flip in `confirm_active`).
+        if device and device.inactive_fw_hash and device.inactive_fw_hash != device.assigned_fw_hash:
             return device.inactive_fw_hash
 
         # Fall back to the ledger: the most recent deployed artifact that is not
@@ -266,7 +272,10 @@ def last_known_good(device_id: str) -> str | None:
             .order_by(HistoryRecord.deployed_at.desc())
             .all()
         )
-        current = device.active_fw_hash if device else None
+        # Roll away from what the server last *intended* the device to run, not
+        # from what it is running: on a lost push those differ, and the running
+        # firmware is then the known-good one we want back.
+        current = (device.assigned_fw_hash or device.active_fw_hash) if device else None
         for row in rows:
             if row.fw_hash != current and row.record_type in (
                 RecordType.PATCH_DEPLOY,

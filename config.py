@@ -68,6 +68,8 @@ CRASH_ATTRIBUTION_WINDOW_SECONDS = _int("CRASH_ATTRIBUTION_WINDOW_SECONDS", 600)
 REVERSION_WINDOW_SECONDS = _int("REVERSION_WINDOW_SECONDS", 300)
 REVERSION_MODE = os.getenv("REVERSION_MODE", "time")  # time | condition | combined
 REVERSION_RECOVERY_THRESHOLD_C = float(os.getenv("REVERSION_RECOVERY_THRESHOLD_C", 60.0))
+# How often condition/combined mode re-checks the device's latest reading.
+REVERSION_POLL_SECONDS = _int("REVERSION_POLL_SECONDS", 5)
 
 # Guard Rail extras: forbidden_pins in the device schema is authoritative
 # (DATA_SCHEMAS.md §1); this only adds pipeline-wide extensions on top.
