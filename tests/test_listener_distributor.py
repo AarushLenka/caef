@@ -3,7 +3,6 @@ payloads are dropped at the gateway, and per-device serialization holds."""
 
 import asyncio
 import json
-import os
 import socket
 import sys
 import uuid
@@ -13,7 +12,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 import config  # noqa: E402
 from server.agent.stub_agent import StubAgent  # noqa: E402

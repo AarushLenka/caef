@@ -4,7 +4,6 @@ retry loop is bounded and escalates rather than looping.
 No live LLM anywhere (TDD.md §5) — every model reply is scripted.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -12,7 +11,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 import config  # noqa: E402
 from server.agent import prompts  # noqa: E402

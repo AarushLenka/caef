@@ -1,6 +1,6 @@
 """Shared test isolation and the guard that keeps tests off production data.
 
-Default backend is in-memory SQLite: offline, fast, no credentials needed.
+Default backend is a scratch SQLite file: offline, fast, no credentials needed.
 Set `CAEF_TEST_POSTGRES=1` to run the same suite against the real Postgres
 backend instead, which is what proves the SQLite/Postgres divergence the
 `aware()` helper in models.py exists to paper over.
@@ -13,8 +13,10 @@ live connection, that the search_path really did land on the test schema before
 a single row is deleted.
 """
 
+import atexit
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -29,11 +31,16 @@ TEST_SCHEMA = "caef_test"
 def _database_url() -> str:
     """Resolve the backend before any test module imports config.
 
-    Every test module calls `os.environ.setdefault("DATABASE_URL", ...)`, so
-    setting it here first wins — conftest is imported before them.
+    File-backed rather than `:memory:` on purpose: deploys and reversions write
+    from worker threads, and the StaticPool that `:memory:` requires shares one
+    connection, so a reader closing its session rolls back a writer's INSERT.
+    models.py rejects `:memory:` outright for that reason.
     """
     if os.getenv("CAEF_TEST_POSTGRES") != "1":
-        return "sqlite:///:memory:"
+        handle, path = tempfile.mkstemp(suffix=".db", prefix="caef_test_")
+        os.close(handle)
+        atexit.register(lambda: Path(path).unlink(missing_ok=True))
+        return f"sqlite:///{path}"
 
     url = os.getenv("DATABASE_URL") or dotenv_values(ROOT / ".env").get("DATABASE_URL")
     if not url or not url.startswith("postgresql"):
@@ -89,10 +96,9 @@ def schema_guard():
 def clean_db(schema_guard):
     """Reset between tests.
 
-    The in-memory SQLite engine is pinned to a StaticPool, which makes it
-    session-wide rather than per-connection, so rows left by one module collide
-    with another module's primary keys. Reset once here instead of trusting
-    every module to remember.
+    The SQLite backend is one file for the whole session, so rows left by one
+    module collide with another module's primary keys. Reset once here instead
+    of trusting every module to remember.
     """
     m.init_db()
     with m.SessionLocal() as db:

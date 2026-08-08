@@ -5,7 +5,6 @@ reversion, an auto-patch does not) and the ordering guarantees the Safety
 Rollback Protocol depends on. No live LLM (TDD.md §5).
 """
 
-import os
 import socket
 import sys
 from pathlib import Path
@@ -14,7 +13,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 import config  # noqa: E402
 from server.agent.agent import Agent  # noqa: E402

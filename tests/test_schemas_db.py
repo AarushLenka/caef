@@ -5,8 +5,6 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# Point the ORM at a scratch SQLite file before models.py builds its engine.
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 from server import schemas as s  # noqa: E402
 from server.db import models as m  # noqa: E402

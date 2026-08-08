@@ -23,7 +23,6 @@ from sqlalchemy import (
     event,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 import config
 from server.schemas import RecordStatus, RecordType, TriggerType
@@ -143,11 +142,19 @@ def aware(value: datetime | None) -> datetime | None:
 
 
 _engine_kwargs = {}
-if config.DATABASE_URL.endswith(":memory:"):
-    # An in-memory SQLite DB is per-connection, so worker threads would each
-    # get their own empty schema. Test-only config, but the failure it causes
-    # is silent and confusing, so it is handled here rather than per test.
-    _engine_kwargs = {"poolclass": StaticPool, "connect_args": {"check_same_thread": False}}
+if config.DATABASE_URL.startswith("sqlite"):
+    if config.DATABASE_URL.endswith(":memory:"):
+        # `:memory:` needs a StaticPool to stay visible across threads, and a
+        # StaticPool shares one connection — so a reader closing its session
+        # ROLLBACKs a writer thread's uncommitted INSERT. Deploys write from
+        # worker threads (asyncio.to_thread), so that race silently loses
+        # History rows. Refuse it; a file-backed SQLite DB has neither problem.
+        raise ValueError(
+            "DATABASE_URL=sqlite:///:memory: is unsafe: deploys write from worker "
+            "threads and a shared connection loses those writes. Use a file path."
+        )
+    # Deploys and reversions run off the event loop, so connections cross threads.
+    _engine_kwargs = {"connect_args": {"check_same_thread": False}}
 
 engine = create_engine(config.DATABASE_URL, future=True, **_engine_kwargs)
 SessionLocal = sessionmaker(engine, expire_on_commit=False, future=True)

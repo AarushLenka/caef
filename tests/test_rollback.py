@@ -6,7 +6,6 @@ known-good restored, no model call anywhere in the sequence.
 """
 
 import asyncio
-import os
 import socket
 import sys
 import threading
@@ -17,7 +16,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 import config  # noqa: E402
 from server.db import models as m  # noqa: E402
@@ -43,12 +41,7 @@ def clean(tmp_path, monkeypatch):
     # Nothing bound: OTA push fails, which the ledger tolerates by design.
     monkeypatch.setattr(config, "OTA_PORT", free_port())
     monkeypatch.setattr(config, "TELEMETRY_TIMEOUT_SECONDS", 1)
-    m.init_db()
-    with m.SessionLocal() as db:
-        for table in (m.HistoryRecord, m.Patch, m.Event, m.Device):
-            db.query(table).delete()
-        db.commit()
-    yield
+    yield  # conftest's clean_db handles table truncation
 
 
 def provision(active: str = BASE) -> None:

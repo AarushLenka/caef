@@ -5,7 +5,6 @@ Table row alone, reach the deployed code, the plan that produced it, and the
 event that triggered it.
 """
 
-import os
 import socket
 import sys
 import threading
@@ -15,7 +14,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
 import config  # noqa: E402
 from server.db import models as m  # noqa: E402
