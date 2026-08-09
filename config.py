@@ -51,6 +51,11 @@ SANDBOX_TIMEOUT_SECONDS = _int("SANDBOX_TIMEOUT_SECONDS", 10)
 SANDBOX_MEMORY_LIMIT = os.getenv("SANDBOX_MEMORY_LIMIT", "128m")
 SANDBOX_CPU_LIMIT = os.getenv("SANDBOX_CPU_LIMIT", "0.5")
 SANDBOX_IMAGE = os.getenv("SANDBOX_IMAGE", "caef-sandbox:latest")
+# The repo path as the *Docker daemon* sees it. Identical to ROOT when the
+# runner is on the host; under docker-compose the runner is itself in a
+# container talking to the host daemon, where `-v /app:...` would bind a path
+# that does not exist on the host.
+SANDBOX_HOST_REPO = Path(os.getenv("SANDBOX_HOST_REPO", ROOT))
 # SAFETY_PROTOCOL.md §3.4: a candidate must emit this marker to count as healthy.
 # The baseline firmware logs it on every tick; empty disables the check.
 SANDBOX_HEALTHY_MARKER = os.getenv("SANDBOX_HEALTHY_MARKER", "[firmware]")
@@ -83,6 +88,11 @@ DENYLIST_CALLS = _list("DENYLIST_CALLS", "eval,exec,compile,__import__,os.system
 LISTENER_HOST = os.getenv("LISTENER_HOST", "127.0.0.1")
 LISTENER_UDP_PORT = _int("LISTENER_UDP_PORT", 9500)  # heartbeats, best-effort
 LISTENER_TCP_PORT = _int("LISTENER_TCP_PORT", 9501)  # events needing an ack
+# Where the *device's* watchdog listens for OTA pushes. Same host as the
+# Listener on a single-machine v0.1 run; separate when server and edge node are
+# different containers/hosts (docker-compose), where LISTENER_HOST is the
+# server's own bind address and cannot double as the device's address.
+DEVICE_OTA_HOST = os.getenv("DEVICE_OTA_HOST", LISTENER_HOST)
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = _int("API_PORT", 8000)  # frontend + /poll reconciliation endpoint
 DASHBOARD_REFRESH_SECONDS = _int("DASHBOARD_REFRESH_SECONDS", 5)  # TDD.md §2.9 live feed

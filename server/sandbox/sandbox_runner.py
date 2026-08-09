@@ -30,6 +30,9 @@ log = logging.getLogger("caef.sandbox")
 
 # Exit code Docker reports when the container is killed by the runner's timeout.
 _SIGKILL_EXIT = 137
+# Where candidates are staged, relative to the repo root. Inside the repo so the
+# single read-only repo mount reaches them; see `run`.
+SANDBOX_WORKDIR = ".sandbox"
 _DOCKER_TIMEOUT_MARGIN_SECONDS = 5
 
 
@@ -101,16 +104,23 @@ def run(output: AgentOutput, last_known_good: str | None = None) -> SandboxResul
         )
 
     container = f"caef-sandbox-{uuid.uuid4().hex[:12]}"
-    with tempfile.TemporaryDirectory() as workdir:
+    # Staged inside the repo rather than /tmp so the single repo mount carries it
+    # too: under docker-compose the runner is itself a container talking to the
+    # host daemon, and a second `-v` of a runner-local temp path would bind
+    # something that does not exist on the host.
+    workroot = Path(config.ROOT) / SANDBOX_WORKDIR
+    workroot.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=workroot) as workdir:
         # The container runs as a non-root uid that does not exist on the host,
-        # so both the mounted directory and the file must be world-readable or
-        # the interpreter cannot open the candidate.
+        # so both the directory and the file must be world-readable or the
+        # interpreter cannot open the candidate.
         Path(workdir).chmod(0o755)
         candidate = Path(workdir) / "candidate.py"
         candidate.write_text(output.code)
         candidate.chmod(0o644)
 
-        repo = Path(config.ROOT).resolve()
+        repo = Path(config.SANDBOX_HOST_REPO).resolve()
+        mounted = f"/caef/{SANDBOX_WORKDIR}/{Path(workdir).name}/candidate.py"
         command = [
             "docker", "run", "--rm", "--name", container,
             # Untrusted code: no network, no privilege escalation, no writable
@@ -124,20 +134,18 @@ def run(output: AgentOutput, last_known_good: str | None = None) -> SandboxResul
             "--memory", config.SANDBOX_MEMORY_LIMIT,
             "--cpus", config.SANDBOX_CPU_LIMIT,
             # Repo read-only so a candidate cannot rewrite the drivers, the
-            # hardware schema, or the pipeline it is being tested by. The
-            # candidate mounts at its own path: a nested mount inside a
-            # read-only mount can't create its own mountpoint.
+            # hardware schema, or the pipeline it is being tested by — including
+            # the staged candidate itself, which lives under this same mount.
             "-v", f"{repo}:/caef:ro",
-            "-v", f"{workdir}:/candidate:ro",
             "-e", "PYTHONPATH=/caef",
             "-e", "PYTHONUNBUFFERED=1",
             # The candidate must not reach a real listener from inside the
             # sandbox; --network none already guarantees this, and the firmware's
             # own unreachable-listener path (NFR-6) handles it gracefully.
-            "-e", "FIRMWARE_PATH=/candidate/candidate.py",
+            "-e", f"FIRMWARE_PATH={mounted}",
             "-e", f"SCENARIO={config.SCENARIO}",
             config.SANDBOX_IMAGE,
-            "python", "/candidate/candidate.py",
+            "python", mounted,
         ]
 
         started = time.monotonic()

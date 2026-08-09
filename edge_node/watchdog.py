@@ -88,10 +88,13 @@ class Watchdog:
     def serve_ota(self) -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
             srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            srv.bind((config.LISTENER_HOST, config.OTA_PORT))
+            # Bound from the device's own side of DEVICE_OTA_HOST: loopback on a
+            # single-machine run, 0.0.0.0 when the edge node is its own container
+            # and the server reaches it by hostname.
+            srv.bind((config.DEVICE_OTA_HOST, config.OTA_PORT))
             srv.listen(4)
             srv.settimeout(1.0)
-            log(f"OTA listening on {config.LISTENER_HOST}:{config.OTA_PORT}")
+            log(f"OTA listening on {config.DEVICE_OTA_HOST}:{config.OTA_PORT}")
             while not self.stop.is_set():
                 try:
                     conn, _ = srv.accept()

@@ -195,7 +195,7 @@ def push_ota(device_id: str, code: str, record_type: RecordType, patch_id: str |
         patch_id=patch_id,
         record_type=record_type,
     )
-    address = (host or config.LISTENER_HOST, port or config.OTA_PORT)
+    address = (host or config.DEVICE_OTA_HOST, port or config.OTA_PORT)
     try:
         with socket.create_connection(address, timeout=config.TELEMETRY_TIMEOUT_SECONDS) as sock:
             sock.sendall(push.model_dump_json().encode() + b"\n")
