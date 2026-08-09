@@ -85,6 +85,7 @@ LISTENER_UDP_PORT = _int("LISTENER_UDP_PORT", 9500)  # heartbeats, best-effort
 LISTENER_TCP_PORT = _int("LISTENER_TCP_PORT", 9501)  # events needing an ack
 API_HOST = os.getenv("API_HOST", "127.0.0.1")
 API_PORT = _int("API_PORT", 8000)  # frontend + /poll reconciliation endpoint
+DASHBOARD_REFRESH_SECONDS = _int("DASHBOARD_REFRESH_SECONDS", 5)  # TDD.md §2.9 live feed
 
 # --- Edge node ---------------------------------------------------------------
 DEVICE_ID = os.getenv("DEVICE_ID", "pi_node_alpha")
