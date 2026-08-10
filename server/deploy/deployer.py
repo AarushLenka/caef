@@ -36,6 +36,23 @@ from server.schemas import (
 log = logging.getLogger("caef.deploy")
 
 
+def _reindex(device_id: str) -> None:
+    """Refresh the Agent's corpus after the running firmware changed.
+
+    Imported here, not at module scope: the RAG layer reads the driver library
+    and the History Table, both of which sit above Deploy in the dependency
+    order. Failures are logged, never raised — the artifact is already live and
+    on the ledger by this point, and a stale corpus is a worse next generation,
+    not a failed deploy.
+    """
+    from server.agent.rag import indexer
+
+    try:
+        indexer.reindex(device_id)
+    except Exception:
+        log.exception("corpus refresh failed for %s; next generation may lack precedent", device_id)
+
+
 # --- firmware store (Soft Firmware) ------------------------------------------
 
 
@@ -236,6 +253,12 @@ def deploy(
     )
     if ack and ack.status == "accepted":
         confirm_active(device_id, fw)
+        # A deployed artifact is precedent: it is what the next generation
+        # retrieves as "what worked last time" (DATA_SCHEMAS.md §8 history docs).
+        # Here rather than in the Orchestrator because this is the single deploy
+        # path (§7) — reversions and rollbacks change the running firmware too,
+        # and the corpus has to follow the device, not just the happy path.
+        _reindex(device_id)
     log.info(
         "deployed %s fw=%s to %s (ack=%s)",
         record_type,

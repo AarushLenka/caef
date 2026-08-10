@@ -191,6 +191,25 @@ def test_retrieval_survives_an_empty_index(tmp_path, monkeypatch):
     assert context.history_docs == []
 
 
+def test_retrieval_indexes_the_driver_library_on_a_cold_start(tmp_path, monkeypatch):
+    """FR-11: the Agent must never plan against an absent driver library.
+
+    Nothing outside the tests used to build the corpus, so a real run retrieved
+    zero drivers and the Agent invented driver APIs — `RelayFan.turn_off()` for
+    a driver whose method is `off()`. Guard Rail passes invented calls (they are
+    neither forbidden pins nor denylisted), the Sandbox fails them, and three
+    attempts later the device is rolled back for a bug in the prompt.
+    """
+    monkeypatch.setattr(config, "RAG_DB_PATH", tmp_path / "cold.db")
+
+    context = retriever.retrieve(heat_task(), BASELINE)
+
+    combined = "\n".join(context.driver_docs)
+    assert "class RelayFan" in combined, "the driver library must reach the Agent"
+    # The exact API the Agent got wrong when it had to guess.
+    assert "def off" in combined and "turn_off" not in combined
+
+
 # --- prompts -----------------------------------------------------------------
 
 

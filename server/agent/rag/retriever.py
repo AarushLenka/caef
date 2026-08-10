@@ -78,6 +78,16 @@ def retrieve(task: AgentTask, current_firmware: str) -> RetrievedContext:
         # Agent needed, which makes it hand-roll one instead (FR-11).
         drivers = _all(connection, "docs_on_comp", task.device_id,
                        config.RAG_DRIVER_DOC_LIMIT)
+        if not drivers:
+            # An empty corpus is a cold start, not a valid retrieval: the driver
+            # library is built from source at index time, so "no drivers" means
+            # nothing has indexed yet, never that the device has none. Without
+            # this the Agent invents plausible driver APIs that do not exist,
+            # which Guard Rail passes and the Sandbox fails — three times, until
+            # the retry budget is gone (FR-11).
+            indexer.index_driver_library(connection)
+            drivers = _all(connection, "docs_on_comp", task.device_id,
+                           config.RAG_DRIVER_DOC_LIMIT)
         # History does grow unbounded, so it stays query-ranked.
         history = _search(
             connection, "history", task.device_id, query, config.RAG_HISTORY_DOC_LIMIT

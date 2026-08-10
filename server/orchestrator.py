@@ -66,6 +66,22 @@ class Orchestrator:
             )
             return
 
+        if task.trigger_type is TriggerType.CONTEXT_TRIGGER and self.scheduler.morphing(
+            task.device_id, task.event
+        ):
+            # The device is already running a morph for this exact situation and
+            # its reversion is still pending. Re-generating would spend a model
+            # call to rebuild firmware the device already has, and — worse —
+            # `schedule` would restart the reversion window, so a situation that
+            # outlasts one window would never revert at all (LOOPS.md §2a).
+            log.info(
+                "%s already morphed for %s; dropping duplicate task %s",
+                task.device_id,
+                task.event,
+                task.task_id,
+            )
+            return
+
         if task.trigger_type is TriggerType.CRITICAL_FAILURE and self._attribute_crash(task):
             if await self._roll_back(task, "crash-loop: strike limit reached"):
                 return
@@ -144,7 +160,7 @@ class Orchestrator:
         if record_type is RecordType.MORPH_DEPLOY:
             # LOOPS.md §2a. A morph is minimal *for a situation* and must not
             # outlive it; an Auto-Patch is durable and schedules nothing.
-            self.scheduler.schedule(task.device_id, task.event_id)
+            self.scheduler.schedule(task.device_id, task.event_id, event=task.event)
 
     # --- persistence ---------------------------------------------------------
 

@@ -14,6 +14,7 @@ alive to receive the patch that fixes it.
 """
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -44,7 +45,13 @@ class Watchdog:
         # subprocess is on the generated-code denylist (config.DENYLIST_CALLS is
         # about Agent output); the supervisor itself is hand-written and must
         # spawn its child somehow.
-        self.child = subprocess.Popen([sys.executable, str(self.firmware_path)])
+        #
+        # The child needs the repo importable: firmware imports `config` and
+        # `edge_node.drivers`, and a generated artifact carries no sys.path
+        # shim of its own — nor should it, since FIRMWARE_PATH can point
+        # anywhere. Giving it the environment is the supervisor's job.
+        env = {**os.environ, "PYTHONPATH": str(config.ROOT)}
+        self.child = subprocess.Popen([sys.executable, str(self.firmware_path)], env=env)
         log(f"firmware started pid={self.child.pid} hash={self.running_hash()}")
 
     def restart_firmware(self) -> None:

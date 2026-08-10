@@ -129,6 +129,29 @@ async def test_context_trigger_deploys_a_morph_and_schedules_reversion():
     assert orchestrator.scheduler.pending(DEVICE)
 
 
+async def test_a_repeat_of_a_live_situation_is_dropped():
+    """LOOPS.md §1 + §2a: a device stays over its threshold and re-emits the
+    same CONTEXT_TRIGGER every hold period. The second one must not reach the
+    model — and must not restart the reversion window, or a situation lasting
+    longer than one window would never revert."""
+    provision()
+    orchestrator = Orchestrator(working_agent())
+    await orchestrator.handle(make_task())
+    first = orchestrator.scheduler._jobs[DEVICE]
+
+    await orchestrator.handle(make_task())
+
+    with m.SessionLocal() as db:
+        assert db.query(m.HistoryRecord).filter_by(record_type=RecordType.MORPH_DEPLOY).count() == 1
+    assert orchestrator.scheduler._jobs[DEVICE] is first, "the pending reversion must survive"
+
+    # A *different* situation on the same device is a real new task.
+    orchestrator.agent = working_agent()  # one scripted reply per generation
+    await orchestrator.handle(make_task(event="LOW_BATTERY"))
+    with m.SessionLocal() as db:
+        assert db.query(m.HistoryRecord).filter_by(record_type=RecordType.MORPH_DEPLOY).count() == 2
+
+
 async def test_critical_failure_deploys_a_patch_and_schedules_nothing():
     """LOOPS.md §4.5: an auto-patch is durable — no reversion job."""
     provision()
@@ -191,7 +214,9 @@ async def test_rollback_cancels_a_pending_reversion():
     rollback.record_strike(DEVICE, "one")
     rollback.record_strike(DEVICE, "two")
     orchestrator.agent = failing_agent()
-    await orchestrator.handle(make_task())
+    # A *new* situation: a repeat of the one already morphed for is dropped
+    # before it reaches the model (see the duplicate test above).
+    await orchestrator.handle(make_task(event="LOW_BATTERY"))
 
     assert not orchestrator.scheduler.pending(DEVICE)
 

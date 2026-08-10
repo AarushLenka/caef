@@ -50,6 +50,14 @@ def _database_url() -> str:
 
 os.environ["DATABASE_URL"] = _database_url()
 
+# Deploy refreshes the RAG corpus (it is precedent for the next generation), so
+# any test that deploys writes an index. Point that at a scratch file before
+# config is imported, or the suite rewrites the developer's real corpus.
+_rag_handle, _rag_path = tempfile.mkstemp(suffix=".db", prefix="caef_test_rag_")
+os.close(_rag_handle)
+atexit.register(lambda: Path(_rag_path).unlink(missing_ok=True))
+os.environ["RAG_DB_PATH"] = _rag_path
+
 from sqlalchemy import event, text  # noqa: E402
 
 from server.db import models as m  # noqa: E402

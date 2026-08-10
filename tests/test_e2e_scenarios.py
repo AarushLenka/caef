@@ -67,10 +67,15 @@ pytestmark = pytest.mark.skipif(
 
 # Scenario A: fan on GPIO_27 enabled, the Lidar driver dropped to free CPU
 # (PRD §6 Scenario A step 3).
+# It keeps reporting the situation, as a real generated morph does: cooling is
+# not instant, so the device stays over threshold and re-fires the trigger for
+# as long as the heat lasts (LOOPS.md §1).
 MORPH = """import time
 
 import config
+from edge_node import telemetry
 from edge_node.drivers import DHT11, RelayFan
+from server.schemas import TriggerType
 
 
 def sensor_loop():
@@ -80,6 +85,16 @@ def sensor_loop():
     while True:
         temp_c = temp_sensor.read_temp_c()
         print(f"[firmware] cooling temp={temp_c}C fan=ON", flush=True)
+        if temp_c > config.HEAT_THRESHOLD_C:
+            telemetry.send_event(
+                telemetry.build(
+                    TriggerType.CONTEXT_TRIGGER,
+                    "HIGH_HEAT_DETECTED",
+                    {"temp_c": temp_c, "threshold": config.HEAT_THRESHOLD_C},
+                )
+            )
+            time.sleep(config.POST_TRIGGER_HOLD_SECONDS)
+            continue
         time.sleep(config.SENSOR_TICK_SECONDS)
 
 
@@ -143,7 +158,10 @@ def wiring(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DEVICE_OTA_HOST", "127.0.0.1")
     monkeypatch.setattr(config, "SANDBOX_TIMEOUT_SECONDS", 4)
     monkeypatch.setattr(config, "REVERSION_MODE", "time")
-    monkeypatch.setattr(config, "REVERSION_WINDOW_SECONDS", 3)
+    # Longer than POST_TRIGGER_HOLD_SECONDS on the device, so a sustained
+    # situation re-fires *while* the morph is still live — the case the
+    # duplicate-drop in the Orchestrator exists for.
+    monkeypatch.setattr(config, "REVERSION_WINDOW_SECONDS", 12)
     monkeypatch.setattr(config, "TELEMETRY_TIMEOUT_SECONDS", 3)
     frontend.FEED.clear()
     indexer.reindex(DEVICE)
@@ -214,10 +232,11 @@ class Device:
             "DEVICE_OTA_HOST": "127.0.0.1",
             "OTA_PORT": str(config.OTA_PORT),
             "SENSOR_TICK_SECONDS": "1",
-            # One trigger per scenario: the hold outlives the test, so the
-            # device is never re-firing the same situation while it is being
-            # patched for it (LOOPS.md §1).
-            "POST_TRIGGER_HOLD_SECONDS": "120",
+            # Short, as on a real device: heat outlasts one trigger, so the
+            # firmware re-fires the same situation while the morph is live
+            # (LOOPS.md §1). The server, not the device, is what must not
+            # re-generate for it.
+            "POST_TRIGGER_HOLD_SECONDS": "5",
             "POLL_INTERVAL_SECONDS": "120",  # push path under test, not the poll path
         }
         self.log = self.logfile.open("w")
@@ -277,9 +296,14 @@ def device_row() -> m.Device:
         return db.get(m.Device, DEVICE)
 
 
-def events_of(trigger: TriggerType) -> list[m.Event]:
+def events_of(trigger: TriggerType, event: str | None = None) -> list[m.Event]:
     with m.SessionLocal() as db:
-        return db.query(m.Event).filter_by(trigger_type=trigger).all()
+        query = db.query(m.Event).filter_by(trigger_type=trigger)
+        # Heartbeats are CONTEXT_TRIGGERs too, so counting a *situation* means
+        # naming it.
+        if event:
+            query = query.filter_by(event=event)
+        return query.all()
 
 
 # --- Scenario A: Situational Morphing ----------------------------------------
@@ -289,7 +313,8 @@ async def test_scenario_a_heat_event_morphs_then_reverts(tmp_path, device):
     """PRD §6 A: >80°C → CONTEXT_TRIGGER → fan firmware deployed and running on
     the device → reverted to the pre-morph artifact once the window closes."""
     baseline = provision()
-    agent = Agent(scripted(MORPH, [17, 27], "Enable Relay_Fan on GPIO_27; drop Lidar to free CPU."))
+    llm = scripted(MORPH, [17, 27], "Enable Relay_Fan on GPIO_27; drop Lidar to free CPU.")
+    agent = Agent(llm)
     device.scenario = "heat"
 
     async with server(agent) as orchestrator:
@@ -311,6 +336,19 @@ async def test_scenario_a_heat_event_morphs_then_reverts(tmp_path, device):
         )
         await until(lambda: "fan ON" in device.output(), 15, "the fan to come on", device)
         assert orchestrator.scheduler.pending(DEVICE), "a morph must schedule its own undo"
+
+        # The device is still hot, so it keeps re-firing the same trigger. Each
+        # repeat must be dropped: re-generating would burn a model call and,
+        # via `schedule`, restart the window the next assertion depends on.
+        calls_after_morph = len(llm.invocations)
+        await until(
+            lambda: len(events_of(TriggerType.CONTEXT_TRIGGER, "HIGH_HEAT_DETECTED")) > 1,
+            30,
+            "the device to re-fire the same situation",
+            device,
+        )
+        assert len(llm.invocations) == calls_after_morph, "a live situation must not re-generate"
+        assert len(history(RecordType.MORPH_DEPLOY)) == 1
 
         # LOOPS.md §2a: the morph is minimal for a situation and must not
         # outlive it.
