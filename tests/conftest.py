@@ -110,7 +110,15 @@ def clean_db(schema_guard):
     """
     m.init_db()
     with m.SessionLocal() as db:
-        for table in (m.HistoryRecord, m.Patch, m.Event, m.Device):
+        # Child tables first: foreign keys are enforced on both backends.
+        for table in (
+            m.DeploymentTransition,
+            m.Deployment,
+            m.HistoryRecord,
+            m.Patch,
+            m.Event,
+            m.Device,
+        ):
             db.query(table).delete()
         db.commit()
     yield

@@ -7,6 +7,7 @@ same commit is a build failure per CLAUDE.md §4.
 
 import hashlib
 import json
+import re
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -49,6 +50,40 @@ class RecordStatus(StrEnum):
     FAILED = "failed"
 
 
+class AdaptationMode(StrEnum):
+    """Which pipeline produced a deployment (RESEARCH.md §1).
+
+    Recorded on the ledger so both arms can be compared from the same table
+    rather than from two divergent ones.
+    """
+
+    SOURCE_GENERATION = "source_generation"
+    MANIFEST_COMPILER = "manifest_compiler"
+
+
+class DeploymentState(StrEnum):
+    """Every distinguishable stage of a deployment (DATA_SCHEMAS.md §19).
+
+    The v0.1 ledger had `deployed | superseded | failed`, and `deployer.deploy`
+    wrote `deployed` even when the OTA push found nobody home. That conflates
+    four different things — we tried to send it, the device took it, the device
+    is running it, and it worked — and only the last is what an operator reading
+    "deployed" believes. These states keep them apart (RESEARCH.md §11).
+    """
+
+    PROPOSED = "proposed"
+    MANIFEST_VALIDATED = "manifest_validated"
+    COMPILED = "compiled"
+    SIMULATION_VERIFIED = "simulation_verified"
+    SIGNED = "signed"
+    DELIVERY_ATTEMPTED = "delivery_attempted"
+    ACCEPTED_BY_DEVICE = "accepted_by_device"
+    ACTIVE_ON_DEVICE = "active_on_device"
+    REJECTED = "rejected"
+    REVERTED = "reverted"
+    ROLLED_BACK = "rolled_back"
+
+
 # --- §1 Device Hardware Schema ----------------------------------------------
 
 
@@ -63,6 +98,17 @@ class PinEntry(BaseModel):
 class SchemaConstraints(BaseModel):
     max_gpio_current: str
     forbidden_pins: list[int] = Field(default_factory=list)
+
+    def max_current_ma(self) -> float | None:
+        """`max_gpio_current` as a number, or None if it is not expressed in mA.
+
+        Added for the local safety supervisor, which checks a declared actuator
+        draw against it per intent (RESEARCH.md §7). Guard Rail keeps its own
+        parser: the baseline is the experimental control and is not edited to
+        share code with the mode being compared against it.
+        """
+        match = re.search(r"([\d.]+)\s*mA", self.max_gpio_current, re.IGNORECASE)
+        return float(match.group(1)) if match else None
 
 
 class HardwareSchema(BaseModel):
