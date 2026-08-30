@@ -8,3 +8,4 @@ firmware_store/
 .sandbox/
 .pytest_cache/
 smoke.db
+results/

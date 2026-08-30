@@ -12,6 +12,17 @@
 #
 # Set SCENARIO=heat to demo Situational Morphing; LLM_API_KEY must be set (the
 # Agentic Core refuses to start without one).
+#
+# NOTE: this stack is the v0.1 `source_generation` baseline — the LLM writes a
+# whole firmware file, Guard Rail and the Docker sandbox vet it. The
+# contract-constrained pipeline does not need any of this: it has no LLM
+# requirement, no sandbox and no containers, and its demo is a single command on
+# the host:
+#
+#     python -m demo.safe_demo
+#
+# ADAPTATION_MODE is passed through below so this stack can be pointed at either
+# pipeline, but the compose path has only been exercised for the baseline.
 
 services:
   # The Verification Sandbox image. Built once here; the server shells out to
@@ -40,7 +51,13 @@ services:
       # so it cannot be inferred from the server's own bind address.
       DEVICE_OTA_HOST: edge-node
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/caef.db}
+      ADAPTATION_MODE: ${ADAPTATION_MODE:-source_generation}
+      # Required by the source_generation Agentic Core. The manifest pipeline's
+      # stub proposer needs no key.
       LLM_API_KEY: ${LLM_API_KEY:?set LLM_API_KEY in .env — the Agentic Core cannot start without it}
+      # Shared HMAC key for signed OTA in manifest mode. Two containers means two
+      # processes, so an ephemeral in-memory key would not work here.
+      CAEF_OTA_HMAC_KEY: ${CAEF_OTA_HMAC_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       # The sandbox runner is inside this container but the daemon it talks to
@@ -67,6 +84,8 @@ services:
       DEVICE_OTA_HOST: 0.0.0.0   # the device's own bind address
       DEVICE_ID: ${DEVICE_ID:-pi_node_alpha}
       SCENARIO: ${SCENARIO:-normal}
+      ADAPTATION_MODE: ${ADAPTATION_MODE:-source_generation}
+      CAEF_OTA_HMAC_KEY: ${CAEF_OTA_HMAC_KEY:-}
       # The firmware artifact lives on a volume: it is rewritten by every OTA
       # push, and a bind-mount would rewrite the repo's baseline on the host.
       FIRMWARE_PATH: /firmware/main.py

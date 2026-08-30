@@ -6,6 +6,15 @@ whiteboard/Excalidraw diagram, in text form, so it survives without the image.
 Read alongside `TDD.md` (implementation detail) and `LOOPS.md` (control-flow
 detail).
 
+**Scope note.** Everything below describes `ADAPTATION_MODE=source_generation`,
+the v0.1 pipeline, which is preserved unchanged as the experimental control. The
+contract-constrained pipeline (`ADAPTATION_MODE=manifest_compiler`) adds
+components this map does not contain — a manifest validator, a deterministic
+compiler, a closed-loop verifier, a signed-package path and an immutable
+on-device supervisor — and is specified in `RESEARCH.md`. The component
+vocabulary in §3 still applies to both: `Event`, `Task`, `History Table` and
+`FKEY` mean the same things in either mode.
+
 ---
 
 ## 1. Component Map
